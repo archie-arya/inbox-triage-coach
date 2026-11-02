@@ -7,7 +7,7 @@ from .config import settings
 
 DEFAULT_MODELS = {
     "groq": ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "openai/gpt-oss-20b"],
-    "gemini": ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.5-flash-lite"],
+    "gemini": ["gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-3.5-flash", "gemini-3.1-flash-lite"],
     "ollama": ["llama3.1", "qwen2.5", "mistral"],
 }
 
@@ -27,6 +27,23 @@ def provider_status() -> list[dict]:
 
 
 async def chat(provider: str, model: str | None, system: str, user: str,
+               temperature: float = 0.3, max_tokens: int = 2048, json_mode: bool = True) -> str:
+    """Call the provider; if no explicit model was chosen, fall back through the model list on 404/429/5xx."""
+    explicit = model or settings.default_model
+    p = (provider or settings.default_provider).lower()
+    candidates = [explicit] if explicit else DEFAULT_MODELS.get(p, [None])[:3]
+    last: LLMError | None = None
+    for m in candidates:
+        try:
+            return await _chat(p, m, system, user, temperature, max_tokens, json_mode)
+        except LLMError as e:
+            last = e
+            if e.status == 400 or explicit:
+                raise
+    raise last  # type: ignore[misc]
+
+
+async def _chat(provider: str, model: str | None, system: str, user: str,
                temperature: float = 0.3, max_tokens: int = 2048, json_mode: bool = True) -> str:
     provider = (provider or settings.default_provider).lower()
     if provider not in DEFAULT_MODELS:
@@ -79,5 +96,7 @@ async def chat(provider: str, model: str | None, system: str, user: str,
 def _check(r: httpx.Response, name: str) -> None:
     if r.status_code == 429:
         raise LLMError(f"{name} rate limit hit — wait a moment and retry", 429)
+    if r.status_code in (404, 500, 503):
+        raise LLMError(f"{name} model unavailable ({r.status_code}): {r.text[:200]}", 503)
     if r.status_code >= 400:
         raise LLMError(f"{name} error {r.status_code}: {r.text[:300]}", 502)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from datetime import date
 from collections import defaultdict, deque
 from pathlib import Path
 from typing import Literal
@@ -122,7 +123,7 @@ async def _triage_one(i: int, thread: str, o: LLMOpts) -> TriageResult:
     try:
         last = None
         for attempt in range(2):
-            raw = await chat(o.provider, o.model, TRIAGE_SYSTEM, f"THREAD:\n<<<\n{_clip(thread)}\n>>>",
+            raw = await chat(o.provider, o.model, TRIAGE_SYSTEM, f"Today is {date.today():%A %Y-%m-%d}. Resolve relative dates (e.g. 'Thursday') against today.\nTHREAD:\n<<<\n{_clip(thread)}\n>>>",
                              o.temperature if attempt == 0 else 0.0, o.max_tokens)
             try:
                 return TriageResult(index=i, ok=True, triage=_normalize(extract_json(raw)))
