@@ -10,4 +10,4 @@ services:
       - key: GEMINI_API_KEY
         sync: false
       - key: DEFAULT_PROVIDER
-        value: groq
+        value: gemini

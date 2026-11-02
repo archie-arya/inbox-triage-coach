@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     gemini_api_key: str = ""
     ollama_base_url: str = "http://localhost:11434"
-    default_provider: str = "groq"
+    default_provider: str = "gemini"
     default_model: str = ""
     cors_origins: str = "*"
     max_input_chars: int = 60000
