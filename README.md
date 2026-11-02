@@ -1,76 +1,97 @@
 # 📥 Inbox Triage & Reply Coach
 
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/archie-arya/inbox-triage-coach)
+**Live:** https://inbox-triage-coach.fly.dev · **Repo:** https://github.com/archie-arya/inbox-triage-coach
 
-Paste (or upload) messy email / support threads → get **priority (P0–P3), category, sentiment, deadlines, an action list and human-sounding reply drafts** in seconds. Runs on free **Groq** or **Gemini** models, or fully local with **Ollama**.
+Inbox Triage & Reply Coach connects to your Gmail and tells you what matters. For each thread you get:
+- priority **P0–P3** with the reason
+- category, sentiment, sender and deadline
+- a concrete action list
+- human-sounding reply drafts you can save straight back to Gmail
 
-## Features
-- Triage: urgency P0–P3 with reason, category (billing/bug/sales/ops/personal/spam/fyi), sentiment, sender, deadline, actions (owner + due), risks
-- Reply drafts in professional / warm / firm tones, with custom instructions; editable, copy, open-in-mail
-- Batch mode (up to 10 threads, separated by a line of `=====`), `.eml`/`.txt` upload, sample threads
-- History in localStorage with JSON/CSV export
-- Settings: provider, model, temperature, max tokens. API keys stay server-side
-- Dark/light mode, mobile-friendly, keyboard shortcuts (Ctrl/⌘+Enter), ARIA labels
-- FastAPI backend: pydantic validation, structured errors, robust JSON parsing with retry, per-IP rate limit, CORS, health check, prompt-injection-aware prompts
+## How it works
+1. **Connect Gmail** (Google sign-in).
+2. **Pick threads.** The inbox list has search and quick filters (`is:unread`, `is:important`, `newer_than:2d`, …). You can select up to 10 threads at a time.
+3. **Triage + drafts.** Results come back sorted by priority. Generate replies in **professional / warm / firm** tones, with optional instructions such as "offer a 10% credit".
+4. **Save as Gmail draft.** The draft is saved in the original thread so you can review it and send it from Gmail. The app **never sends email**.
 
-## API
-| Method | Path | Body |
+**Secondary:** you can also paste or upload a thread (`.eml`/`.txt`), or try a built-in sample without signing in.
+
+**Also included:**
+- History stays in your browser (localStorage), with JSON/CSV export.
+- Dark/light mode, works on mobile.
+- Keyboard-friendly (Ctrl/⌘+Enter), with accessibility basics.
+
+## Keys & privacy
+- **Visitors never paste API keys.** The LLM keys (Gemini by default; Groq and Ollama are optional) exist only as server-side environment variables or Fly secrets. They are never in the frontend or in git.
+- **Gmail scopes:** `gmail.readonly` (list and read the threads you pick) and `gmail.compose` (create drafts only).
+- **No database.** OAuth tokens live in an encrypted, HttpOnly cookie. "Disconnect" revokes access with Google.
+- **Policy pages:** [Privacy Policy](https://inbox-triage-coach.fly.dev/privacy) at `/privacy` and [Terms of Service](https://inbox-triage-coach.fly.dev/terms) at `/terms`.
+
+### Google sign-in note
+The OAuth app is **in production** but **not yet verified by Google**, so users see a "Google hasn't verified this app" screen. To continue: click **Advanced → Go to inbox-triage-coach.fly.dev (unsafe) → Continue**. Unverified apps are limited to 100 users. Full Google verification is optional for later; it includes a CASA security assessment, because the Gmail scopes are restricted. It removes the warning and the cap.
+
+## Architecture
+- **Backend:** FastAPI (`backend/app`)
+  - LLM layer for Gemini, Groq and Ollama, with automatic Gemini model fallback.
+  - Strict JSON prompts with validation and a retry.
+  - Per-IP rate limiting, structured errors, CORS and a health check.
+  - Gmail OAuth, inbox, thread and draft endpoints.
+- **Frontend:** Vite + React + TypeScript + Tailwind (`frontend/`). It builds into `backend/static` and is served by FastAPI, so the whole app runs as one service.
+
+| Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/health` | – |
-| GET | `/api/providers` | – |
-| POST | `/api/triage` | `{threads: string[], provider?, model?, temperature?, max_tokens?}` |
-| POST | `/api/reply` | `{thread, tones: ["professional","warm","firm"], instructions?, triage?, provider?, model?}` |
-| POST | `/api/parse-eml` | multipart `file` |
+| GET | `/api/health` | health check |
+| GET | `/api/providers` | configured LLM providers / models |
+| POST | `/api/triage` | `{threads: string[]}` → triage JSON per thread |
+| POST | `/api/reply` | `{thread, tones[], instructions?, triage?}` → drafts |
+| GET | `/api/me` | Gmail connection status |
+| GET | `/api/gmail/threads`, `/api/gmail/threads/{id}` | list / read threads |
+| POST | `/api/gmail/drafts` | save a reply as a Gmail draft |
+| GET | `/auth/google/login`, `/auth/google/callback`, POST `/auth/logout` | OAuth |
 
-Interactive docs at `/docs`.
+Interactive API docs: `/docs`.
 
 ## Run locally
 ```bash
-cp .env.example .env            # add GROQ_API_KEY and/or GEMINI_API_KEY
+git clone https://github.com/archie-arya/inbox-triage-coach && cd inbox-triage-coach
+cp .env.example .env                      # fill in the values below
 python3 -m venv .venv && .venv/bin/pip install -r backend/requirements.txt
-cd frontend && npm install && npm run build && cd ..   # builds into backend/static
+(cd frontend && npm install && npm run build)          # outputs to backend/static
 cd backend && ../.venv/bin/uvicorn app.main:app --reload --env-file ../.env
 # open http://localhost:8000
 ```
-Frontend dev with hot reload: `cd frontend && npm run dev` (proxies `/api` to :8000).
+For frontend hot reload, run `cd frontend && npm run dev`. It proxies `/api` to `:8000`.
 
-### Ollama (local, private)
+### Environment variables
+| Var | Required | Notes |
+|---|---|---|
+| `GEMINI_API_KEY` | yes (default provider) | https://aistudio.google.com/apikey |
+| `DEFAULT_PROVIDER` | – | `gemini` (default), `groq`, or `ollama` |
+| `DEFAULT_MODEL` | – | blank = automatic (`gemini-3.5-flash-lite`, then fallbacks) |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | for Gmail | Google Cloud OAuth client of type "Web application" |
+| `PUBLIC_URL` | for Gmail | e.g. `http://localhost:8000`; the redirect URI is `PUBLIC_URL/auth/google/callback` |
+| `SESSION_SECRET` | yes in prod | long random string (`openssl rand -hex 32`) used to encrypt the session cookie |
+| `GROQ_API_KEY` | optional | https://console.groq.com/keys |
+| `OLLAMA_BASE_URL` | optional | e.g. `http://localhost:11434` (`ollama pull llama3.1`) |
+| `CORS_ORIGINS`, `RATE_LIMIT_PER_MINUTE`, `MAX_INPUT_CHARS` | optional | tuning |
+
+**Google OAuth setup** (one time):
+1. Enable the **Gmail API**.
+2. On the consent screen, add the scopes `gmail.readonly` and `gmail.compose`, plus the home, privacy and terms URLs and the authorized domain.
+3. Create a Web OAuth client with the redirect URI `https://<your-host>/auth/google/callback`. Add `http://localhost:8000/auth/google/callback` too for local development.
+
+### Docker
 ```bash
-ollama pull llama3.1
-# .env: DEFAULT_PROVIDER=ollama  OLLAMA_BASE_URL=http://localhost:11434
+docker compose up --build     # http://localhost:8000 (uncomment the ollama service for local models)
 ```
 
-## Docker
+## Deploy (Fly.io)
+`fly.toml` is included. It sets the app `inbox-triage-coach`, a health check on `/api/health`, scale-to-zero, and `PUBLIC_URL`.
 ```bash
-docker compose up --build    # http://localhost:8000
+fly secrets set GEMINI_API_KEY=... GOOGLE_CLIENT_ID=... GOOGLE_CLIENT_SECRET=... SESSION_SECRET=$(openssl rand -hex 32) DEFAULT_PROVIDER=gemini
+fly deploy --remote-only --ha=false --depot=false
 ```
-
-## Deploy (free)
-Single container: FastAPI serves the built SPA, so one service = one public URL.
-- **Render**: New → Blueprint → pick this repo (uses `render.yaml`). Set `GROQ_API_KEY` / `GEMINI_API_KEY`.
-- **Railway**: `railway init && railway up`, then add the env vars. The Dockerfile is detected automatically, and `$PORT` is honored.
-- **Fly.io**: `fly launch --dockerfile Dockerfile` then `fly secrets set GROQ_API_KEY=...`
-
-## Env vars
-`GROQ_API_KEY`, `GEMINI_API_KEY`, `OLLAMA_BASE_URL`, `DEFAULT_PROVIDER` (groq|gemini|ollama), `DEFAULT_MODEL`, `CORS_ORIGINS`, `RATE_LIMIT_PER_MINUTE`, `MAX_INPUT_CHARS`.
+Render (`render.yaml`) and a `Procfile` are also included for other hosts.
 
 ## License
-MIT
-
-### Fly.io (keys stay server-side)
-```bash
-fly launch --copy-config --no-deploy   # uses fly.toml
-fly secrets set GROQ_API_KEY=... GEMINI_API_KEY=...   # never in git or the browser
-fly deploy
-```
-
-## Gmail sign-in (primary flow)
-Users click **Connect Gmail** → pick threads from their inbox → triage + drafts → **Save as Gmail draft**. Scopes: `gmail.readonly`, `gmail.compose` (drafts only; nothing is ever sent). OAuth tokens live only in an encrypted HttpOnly cookie, and no database is used.
-
-One-time setup (app owner):
-1. https://console.cloud.google.com → create project → **APIs & Services → Library → enable Gmail API**.
-2. **OAuth consent screen**: External, app name, support email, add scopes `gmail.readonly`, `gmail.compose`, and add test users (until the app is verified by Google; restricted scopes need verification for public use).
-3. **Credentials → Create OAuth client ID → Web application**. Authorized redirect URI: `https://inbox-triage-coach.fly.dev/auth/google/callback` (and `http://localhost:8000/auth/google/callback` for dev).
-4. `fly secrets set GOOGLE_CLIENT_ID=... GOOGLE_CLIENT_SECRET=...`
-
-All LLM keys are server-side secrets; visitors never bring their own key. Paste/upload remains as a fallback.
+MIT. See [LICENSE](LICENSE).
