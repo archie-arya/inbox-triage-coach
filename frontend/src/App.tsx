@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { api, Draft, Provider, Settings, Triage, TriageResult } from "./api";
+import { api, Draft, gmail, Me, Provider, ReplyMeta, Settings, ThreadMeta, Triage, TriageResult } from "./api";
 import { SAMPLES } from "./samples";
 
+type GMeta = { thread_id: string } & ReplyMeta;
 type HistoryItem = { id: string; at: string; thread: string; triage: Triage; drafts?: Draft[] };
 type Toast = { id: number; msg: string; kind: "error" | "ok" };
 const SEP = "\n=====\n";
@@ -12,7 +13,9 @@ const load = <T,>(k: string, d: T): T => { try { return JSON.parse(localStorage.
 
 export default function App() {
   const [dark, setDark] = useState(() => load("itc.dark", window.matchMedia("(prefers-color-scheme: dark)").matches));
-  const [view, setView] = useState<"home" | "app" | "history">(() => (location.hash === "#app" ? "app" : "home"));
+  const [view, setView] = useState<"home" | "inbox" | "app" | "history">(() => (location.hash === "#inbox" ? "inbox" : location.hash === "#app" ? "app" : "home"));
+  const [me, setMe] = useState<Me | null>(null);
+  const [inboxResults, setInboxResults] = useState<{ thread: string; meta: GMeta; r: TriageResult }[]>([]);
   const [providers, setProviders] = useState<Provider[]>([]);
   const [settings, setSettings] = useState<Settings>(() => load("itc.settings", { provider: "", model: "", temperature: 0.3, max_tokens: 2048 }));
   const [showSettings, setShowSettings] = useState(false);
@@ -31,6 +34,9 @@ export default function App() {
       setProviders(p.providers);
       setSettings((s) => (s.provider ? s : { ...s, provider: p.default_provider, model: p.default_model }));
     }).catch((e) => toast(e.message));
+    gmail.me().then(setMe).catch(() => setMe({ gmail_configured: false, connected: false, email: "" }));
+    const err = new URLSearchParams(location.search).get("auth_error");
+    if (err) { toast(`Gmail sign-in failed: ${err}`); window.history.replaceState(null, "", "/"); }
   }, []);
 
   const toast = (msg: string, kind: Toast["kind"] = "error") => {
@@ -72,7 +78,8 @@ export default function App() {
         <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3">
           <button onClick={() => setView("home")} className="font-semibold">📥 Inbox Triage <span className="text-indigo-500">Coach</span></button>
           <nav className="ml-auto flex items-center gap-2 text-sm">
-            <button className="btn-ghost" onClick={() => setView("app")} aria-current={view === "app"}>Triage</button>
+            <button className="btn-ghost" onClick={() => setView("inbox")} aria-current={view === "inbox"}>Inbox</button>
+            <button className="btn-ghost hidden sm:inline-flex" onClick={() => setView("app")} aria-current={view === "app"}>Paste</button>
             <button className="btn-ghost" onClick={() => setView("history")}>History ({history.length})</button>
             <button className="btn-ghost" aria-label="Settings" onClick={() => setShowSettings(true)}>⚙️</button>
             <button className="btn-ghost" aria-label="Toggle dark mode" onClick={() => setDark(!dark)}>{dark ? "☀️" : "🌙"}</button>
@@ -81,7 +88,10 @@ export default function App() {
       </header>
 
       <main id="main" className="mx-auto max-w-6xl px-4 py-8">
-        {view === "home" && <Landing onStart={() => { setView("app"); setInput(SAMPLES.join(SEP)); }} onOpen={() => setView("app")} />}
+        {view === "home" && <Landing me={me} onInbox={() => setView("inbox")} onSample={() => { setView("app"); setInput(SAMPLES.join(SEP)); }} />}
+
+        {view === "inbox" && <Inbox me={me} setMe={setMe} settings={settings} toast={toast} results={inboxResults} setResults={setInboxResults}
+          onSaved={(items) => setHistory((h) => [...items, ...h])} onPaste={() => setView("app")} />}
 
         {view === "app" && (
           <div className="grid gap-6 lg:grid-cols-5">
@@ -132,7 +142,7 @@ export default function App() {
 
 function Spinner() { return <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" aria-hidden />; }
 
-function Landing({ onStart, onOpen }: { onStart: () => void; onOpen: () => void }) {
+function Landing({ me, onInbox, onSample }: { me: Me | null; onInbox: () => void; onSample: () => void }) {
   const feats = [
     ["🚦", "Priority in seconds", "P0–P3 urgency with the reason, so you know what to answer first."],
     ["✅", "Action list", "Who owes what, by when — deadlines extracted from the thread."],
@@ -143,18 +153,21 @@ function Landing({ onStart, onOpen }: { onStart: () => void; onOpen: () => void 
     <div className="py-10 text-center">
       <p className="mx-auto w-fit rounded-full bg-indigo-100 px-3 py-1 text-xs font-medium text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">Free models · Groq · Gemini · Ollama</p>
       <h1 className="mx-auto mt-4 max-w-3xl text-4xl font-bold tracking-tight sm:text-5xl">Stop drowning in email. <span className="text-indigo-500">Know what matters and reply faster.</span></h1>
-      <p className="mx-auto mt-4 max-w-2xl text-lg text-slate-600 dark:text-slate-400">Paste a messy inbox or support thread. Get urgency, category, sentiment, deadlines, a clear to-do list and ready-to-send reply drafts.</p>
+      <p className="mx-auto mt-4 max-w-2xl text-lg text-slate-600 dark:text-slate-400">Connect Gmail, pick the threads that matter, and get urgency, category, sentiment, deadlines, a clear to-do list and ready-to-send reply drafts.</p>
       <div className="mt-8 flex justify-center gap-3">
-        <button className="btn-primary px-6 py-3 text-base" onClick={onStart}>Try it with a sample →</button>
-        <button className="btn-ghost px-6 py-3 text-base" onClick={onOpen}>Paste my own</button>
+        {me?.connected
+          ? <button className="btn-primary px-6 py-3 text-base" onClick={onInbox}>Open my inbox →</button>
+          : <a className="btn-primary px-6 py-3 text-base" href="/auth/google/login" aria-disabled={!me?.gmail_configured}><GIcon /> Connect Gmail</a>}
+        <button className="btn-ghost px-6 py-3 text-base" onClick={onSample}>Try a sample (no sign-in)</button>
       </div>
+      <p className="mt-3 text-xs text-slate-500">Read + draft access only. We never send email for you and store nothing on our servers.</p>
       <div className="mt-12 grid gap-4 text-left sm:grid-cols-2 lg:grid-cols-4">
         {feats.map(([i, h, d]) => <div key={h} className="card"><div className="text-2xl">{i}</div><h3 className="mt-2 font-semibold">{h}</h3><p className="mt-1 text-sm text-slate-600 dark:text-slate-400">{d}</p></div>)}
       </div>
     </div>);
 }
 
-function TriageCard({ thread, t, settings, toast, onDrafts }: { thread: string; t: Triage; settings: Settings; toast: (m: string, k?: "ok" | "error") => void; onDrafts: (d: Draft[]) => void }) {
+function TriageCard({ thread, t, settings, toast, onDrafts, meta }: { thread: string; t: Triage; settings: Settings; toast: (m: string, k?: "ok" | "error") => void; onDrafts: (d: Draft[]) => void; meta?: GMeta }) {
   const [tones, setTones] = useState<string[]>(["professional", "warm"]);
   const [instr, setInstr] = useState("");
   const [drafts, setDrafts] = useState<Draft[]>([]);
@@ -186,19 +199,26 @@ function TriageCard({ thread, t, settings, toast, onDrafts }: { thread: string; 
         </fieldset>
         <input className="input mt-2" placeholder="Optional: e.g. offer a 10% credit, propose Wednesday 3pm" value={instr} onChange={(e) => setInstr(e.target.value)} aria-label="Reply instructions" />
         <button className="btn-primary mt-2" disabled={busy} onClick={gen}>{busy ? <Spinner /> : "✍️"} {drafts.length ? "Regenerate" : "Draft replies"}</button>
-        <div className="mt-3 grid gap-3 md:grid-cols-2">{drafts.map((d, i) => <DraftBox key={i} d={d} toast={toast} />)}</div>
+        <div className="mt-3 grid gap-3 md:grid-cols-2">{drafts.map((d, i) => <DraftBox key={i} d={d} toast={toast} meta={meta} />)}</div>
       </div>
     </article>);
 }
 
-function DraftBox({ d, toast }: { d: Draft; toast: (m: string, k?: "ok" | "error") => void }) {
+function DraftBox({ d, toast, meta }: { d: Draft; toast: (m: string, k?: "ok" | "error") => void; meta?: GMeta }) {
   const [body, setBody] = useState(d.body);
+  const [saving, setSaving] = useState(false);
+  const save = async () => {
+    if (!meta) return;
+    setSaving(true);
+    try { await gmail.draft({ thread_id: meta.thread_id, to: meta.from, subject: meta.subject, body, in_reply_to: meta.message_id, references: meta.references }); toast("Saved to Gmail drafts", "ok"); }
+    catch (e) { toast((e as Error).message); } finally { setSaving(false); }
+  };
   useEffect(() => setBody(d.body), [d.body]);
   const copy = async () => { await navigator.clipboard.writeText((d.subject ? `Subject: ${d.subject}\n\n` : "") + body); toast("Copied to clipboard", "ok"); };
   return (
     <div className="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
       <div className="mb-2 flex items-center justify-between"><Badge>{d.tone}</Badge>
-        <div className="flex gap-1"><button className="btn-ghost px-2 py-1 text-xs" onClick={copy}>Copy</button>
+        <div className="flex gap-1">{meta && <button className="btn-primary px-2 py-1 text-xs" disabled={saving} onClick={save}>{saving ? "Saving…" : "Save as Gmail draft"}</button>}<button className="btn-ghost px-2 py-1 text-xs" onClick={copy}>Copy</button>
           <a className="btn-ghost px-2 py-1 text-xs" href={`mailto:?subject=${encodeURIComponent(d.subject)}&body=${encodeURIComponent(body)}`}>Open in mail</a></div></div>
       {d.subject && <p className="mb-1 text-xs font-medium">Subject: {d.subject}</p>}
       <textarea className="input h-48 text-sm" value={body} onChange={(e) => setBody(e.target.value)} aria-label={`${d.tone} draft`} />
@@ -259,3 +279,80 @@ function SettingsModal({ providers, s, set, close }: { providers: Provider[]; s:
 
 function Badge({ children }: { children: React.ReactNode }) { return <span className="rounded-lg bg-slate-100 px-2 py-0.5 text-xs dark:bg-slate-800">{children}</span>; }
 function sentimentEmoji(s: string) { return ({ angry: "😡", frustrated: "😤", positive: "😊" } as Record<string, string>)[s] ?? "😐"; }
+
+function GIcon() { return <span aria-hidden className="rounded bg-white px-1 text-xs font-bold text-red-500">M</span>; }
+
+function Inbox({ me, setMe, settings, toast, results, setResults, onSaved, onPaste }: {
+  me: Me | null; setMe: (m: Me) => void; settings: Settings; toast: (m: string, k?: "ok" | "error") => void;
+  results: { thread: string; meta: GMeta; r: TriageResult }[]; setResults: (r: { thread: string; meta: GMeta; r: TriageResult }[]) => void;
+  onSaved: (h: HistoryItem[]) => void; onPaste: () => void }) {
+  const [q, setQ] = useState("in:inbox");
+  const [threads, setThreads] = useState<ThreadMeta[]>([]);
+  const [next, setNext] = useState<string | undefined>();
+  const [sel, setSel] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const load = async (more = false) => {
+    setLoading(true);
+    try { const r = await gmail.list(q, more ? next ?? "" : ""); setThreads(more ? [...threads, ...r.threads] : r.threads); setNext(r.nextPageToken); }
+    catch (e) { toast((e as Error).message); if (String((e as Error).message).includes("reconnect")) setMe({ ...me!, connected: false }); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { if (me?.connected) load(); }, [me?.connected]);
+  if (!me) return <div className="card h-40 animate-pulse" />;
+  if (!me.connected) return (
+    <div className="card mx-auto max-w-lg text-center">
+      <p className="text-4xl">📬</p><h2 className="mt-2 text-xl font-semibold">Connect your Gmail</h2>
+      <p className="mt-2 text-sm text-slate-500">Pick threads from your inbox and get priorities + reply drafts. Read and draft access only. Nothing is sent without you.</p>
+      {me.gmail_configured
+        ? <a className="btn-primary mt-4" href="/auth/google/login"><GIcon /> Sign in with Google</a>
+        : <p className="mt-4 text-sm text-amber-600">Gmail sign-in isn't configured on this server yet.</p>}
+      <p className="mt-4 text-sm"><button className="underline" onClick={onPaste}>Or paste / upload a thread instead</button></p>
+    </div>);
+  async function triageSelected() {
+    const ids = [...sel].slice(0, 10);
+    if (!ids.length) return toast("Select at least one thread");
+    setBusy(true); setResults([]);
+    try {
+      const full = await Promise.all(ids.map((id) => gmail.thread(id)));
+      const res = await api.triage(full.map((f) => f.text), settings);
+      const out = res.map((r) => ({ thread: full[r.index].text, meta: { thread_id: full[r.index].id, ...full[r.index].reply_meta }, r }));
+      setResults(out);
+      onSaved(out.filter((o) => o.r.ok && o.r.triage).map((o) => ({ id: crypto.randomUUID(), at: new Date().toISOString(), thread: o.thread, triage: o.r.triage! })));
+      out.filter((o) => !o.r.ok).forEach((o) => toast(`Thread ${o.r.index + 1}: ${o.r.error}`));
+    } catch (e) { toast((e as Error).message); } finally { setBusy(false); }
+  }
+  const toggle = (id: string) => { const s = new Set(sel); s.has(id) ? s.delete(id) : s.size < 10 ? s.add(id) : toast("Max 10 threads per batch"); setSel(s); };
+  const sorted = [...results].sort((a, b) => (a.r.triage?.priority ?? "P9").localeCompare(b.r.triage?.priority ?? "P9"));
+  return (
+    <div className="grid gap-6 lg:grid-cols-5">
+      <section className="card lg:col-span-2" aria-label="Inbox">
+        <div className="flex items-center justify-between text-sm"><span className="truncate text-slate-500">{me.email}</span>
+          <button className="text-xs underline" onClick={async () => { await gmail.logout(); setMe({ ...me, connected: false, email: "" }); }}>Disconnect</button></div>
+        <form className="mt-3 flex gap-2" onSubmit={(e) => { e.preventDefault(); load(); }}>
+          <input className="input" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Gmail search" placeholder="in:inbox is:unread" />
+          <button className="btn-ghost">Search</button></form>
+        <div className="mt-2 flex flex-wrap gap-1 text-xs">{["in:inbox", "is:unread", "is:important", "newer_than:2d"].map((x) =>
+          <button key={x} className="rounded-lg bg-slate-100 px-2 py-1 dark:bg-slate-800" onClick={() => { setQ(x); setTimeout(() => load(), 0); }}>{x}</button>)}</div>
+        <ul className="mt-3 max-h-[60vh] divide-y divide-slate-200 overflow-auto dark:divide-slate-800">
+          {threads.map((t) => (
+            <li key={t.id}><label className="flex cursor-pointer gap-3 py-2">
+              <input type="checkbox" checked={sel.has(t.id)} onChange={() => toggle(t.id)} className="mt-1" />
+              <span className="min-w-0"><span className={`block truncate text-sm ${t.unread ? "font-semibold" : ""}`}>{t.subject}{t.count > 1 ? ` (${t.count})` : ""}</span>
+                <span className="block truncate text-xs text-slate-500">{t.from.replace(/<.*>/, "")} · {new Date(t.date).toLocaleDateString()}</span>
+                <span className="block truncate text-xs text-slate-400">{t.snippet}</span></span></label></li>))}
+          {loading && <li className="py-3 text-center text-sm text-slate-500">Loading…</li>}
+          {!loading && !threads.length && <li className="py-6 text-center text-sm text-slate-500">No threads match.</li>}
+        </ul>
+        {next && !loading && <button className="btn-ghost mt-2 w-full justify-center" onClick={() => load(true)}>Load more</button>}
+        <button className="btn-primary mt-3 w-full justify-center" disabled={busy || !sel.size} onClick={triageSelected}>{busy ? <Spinner /> : "⚡"} Triage {sel.size || ""} selected</button>
+      </section>
+      <section className="space-y-4 lg:col-span-3" aria-live="polite">
+        {busy && [0, 1].map((i) => <div key={i} className="card h-40 animate-pulse" />)}
+        {!busy && !results.length && <div className="card text-center text-slate-500"><p className="text-4xl">🗂️</p><p className="mt-2">Select threads on the left and hit <b>Triage</b>.</p></div>}
+        {sorted.map(({ thread, meta, r }) => r.ok && r.triage
+          ? <TriageCard key={r.index} thread={thread} t={r.triage} settings={settings} toast={toast} meta={meta} onDrafts={() => {}} />
+          : <div key={r.index} className="card text-sm text-red-600">Thread {r.index + 1} failed: {r.error}</div>)}
+      </section>
+    </div>);
+}

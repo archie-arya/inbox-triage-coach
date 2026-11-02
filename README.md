@@ -63,3 +63,14 @@ fly launch --copy-config --no-deploy   # uses fly.toml
 fly secrets set GROQ_API_KEY=... GEMINI_API_KEY=...   # never in git or the browser
 fly deploy
 ```
+
+## Gmail sign-in (primary flow)
+Users click **Connect Gmail** → pick threads from their inbox → triage + drafts → **Save as Gmail draft**. Scopes: `gmail.readonly`, `gmail.compose` (drafts only; nothing is ever sent). OAuth tokens live only in an encrypted HttpOnly cookie, and no database is used.
+
+One-time setup (app owner):
+1. https://console.cloud.google.com → create project → **APIs & Services → Library → enable Gmail API**.
+2. **OAuth consent screen**: External, app name, support email, add scopes `gmail.readonly`, `gmail.compose`, and add test users (until the app is verified by Google; restricted scopes need verification for public use).
+3. **Credentials → Create OAuth client ID → Web application**. Authorized redirect URI: `https://inbox-triage-coach.fly.dev/auth/google/callback` (and `http://localhost:8000/auth/google/callback` for dev).
+4. `fly secrets set GOOGLE_CLIENT_ID=... GOOGLE_CLIENT_SECRET=...`
+
+All LLM keys are server-side secrets; visitors never bring their own key. Paste/upload remains as a fallback.

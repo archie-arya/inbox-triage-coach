@@ -22,3 +22,14 @@ export const api = {
     post<Draft[]>("/api/reply", { thread, tones, instructions, triage, ...opts(s) }),
   parseFile: (f: File) => { const fd = new FormData(); fd.append("file", f); return req<{ text: string }>("/api/parse-eml", { method: "POST", body: fd }); },
 };
+
+export type Me = { gmail_configured: boolean; connected: boolean; email: string };
+export type ThreadMeta = { id: string; subject: string; from: string; date: number; snippet: string; count: number; unread: boolean };
+export type ReplyMeta = { from: string; subject: string; message_id: string; references: string };
+export const gmail = {
+  me: () => req<Me>("/api/me"),
+  list: (q: string, pageToken = "") => req<{ threads: ThreadMeta[]; nextPageToken?: string }>(`/api/gmail/threads?${new URLSearchParams({ q, pageToken })}`),
+  thread: (id: string) => req<{ id: string; text: string; reply_meta: ReplyMeta }>(`/api/gmail/threads/${id}`),
+  draft: (b: { thread_id: string; to: string; subject: string; body: string; in_reply_to: string; references: string }) => post<{ ok: boolean }>("/api/gmail/drafts", b),
+  logout: () => post<{ ok: boolean }>("/auth/logout", {}),
+};

@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     max_input_chars: int = 60000
     request_timeout: float = 90.0
     rate_limit_per_minute: int = 30
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    public_url: str = "http://localhost:8000"
+    session_secret: str = ""
 
 
 settings = Settings()

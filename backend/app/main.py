@@ -12,13 +12,16 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 
 from .config import settings
+from .gmail import router as gmail_router
 from .llm import LLMError, chat, provider_status
 from .parsing import eml_to_text, extract_json
 from .prompts import REPLY_SYSTEM, TONES, TRIAGE_SYSTEM
 
 app = FastAPI(title="Inbox Triage & Reply Coach", version="1.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=[o.strip() for o in settings.cors_origins.split(",")],
-                   allow_methods=["*"], allow_headers=["*"])
+                   allow_credentials=settings.cors_origins != "*", allow_methods=["*"], allow_headers=["*"])
+
+app.include_router(gmail_router)
 
 _hits: dict[str, deque] = defaultdict(deque)
 
