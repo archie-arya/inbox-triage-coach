@@ -1,5 +1,7 @@
 # 📥 Inbox Triage & Reply Coach
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/archie-arya/inbox-triage-coach)
+
 Paste (or upload) messy email / support threads → get **priority (P0–P3), category, sentiment, deadlines, an action list and human-sounding reply drafts** in seconds. Runs on free **Groq** or **Gemini** models, or fully local with **Ollama**.
 
 ## Features
