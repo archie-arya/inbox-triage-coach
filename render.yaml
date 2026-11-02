@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: inbox-triage-coach
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: DEFAULT_PROVIDER
+        value: groq
