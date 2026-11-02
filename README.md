@@ -56,3 +56,10 @@ Single container: FastAPI serves the built SPA, so one service = one public URL.
 
 ## License
 MIT
+
+### Fly.io (keys stay server-side)
+```bash
+fly launch --copy-config --no-deploy   # uses fly.toml
+fly secrets set GROQ_API_KEY=... GEMINI_API_KEY=...   # never in git or the browser
+fly deploy
+```
