@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from .config import settings
 from .gmail import router as gmail_router
+from .legal import router as legal_router
 from .llm import LLMError, chat, provider_status
 from .parsing import eml_to_text, extract_json
 from .prompts import REPLY_SYSTEM, TONES, TRIAGE_SYSTEM
@@ -23,6 +24,7 @@ app.add_middleware(CORSMiddleware, allow_origins=[o.strip() for o in settings.co
                    allow_credentials=settings.cors_origins != "*", allow_methods=["*"], allow_headers=["*"])
 
 app.include_router(gmail_router)
+app.include_router(legal_router)
 
 _hits: dict[str, deque] = defaultdict(deque)
 

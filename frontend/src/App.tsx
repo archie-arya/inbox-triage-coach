@@ -131,6 +131,10 @@ export default function App() {
         {view === "history" && <History items={history} setItems={setHistory} toast={toast} />}
       </main>
 
+      <footer className="mx-auto max-w-6xl px-4 pb-8 text-center text-xs text-slate-500">
+        <a className="underline" href="/privacy">Privacy</a> · <a className="underline" href="/terms">Terms</a> · <a className="underline" href="https://github.com/archie-arya/inbox-triage-coach">GitHub</a>
+      </footer>
+
       {showSettings && <SettingsModal providers={providers} s={settings} set={setSettings} close={() => setShowSettings(false)} />}
 
       <div className="fixed bottom-4 right-4 z-50 space-y-2" role="status">
