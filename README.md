@@ -2,6 +2,10 @@
 
 **Live:** https://inbox-triage-coach.fly.dev · **Repo:** https://github.com/archie-arya/inbox-triage-coach
 
+[![Watch the 21-second demo](docs/demo.jpg)](docs/demo.mp4)
+
+▶ Click the image to watch the 21-second demo (with voiceover).
+
 Inbox Triage & Reply Coach connects to your Gmail and tells you what matters. For each thread you get:
 - priority **P0–P3** with the reason
 - category, sentiment, sender and deadline
