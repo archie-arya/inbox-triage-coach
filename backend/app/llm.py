@@ -49,6 +49,8 @@ async def chat(provider: str, model: str | None, system: str, user: str,
                 if not settings.gemini_api_key:
                     raise LLMError("GEMINI_API_KEY is not configured on the server", 400)
                 cfg = {"temperature": temperature, "maxOutputTokens": max_tokens}
+                if model.startswith("gemini-2.5-flash"):
+                    cfg["thinkingConfig"] = {"thinkingBudget": 0}  # keep latency low, tokens for output
                 if json_mode:
                     cfg["responseMimeType"] = "application/json"
                 body = {"systemInstruction": {"parts": [{"text": system}]},
